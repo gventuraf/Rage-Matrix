@@ -22,12 +22,9 @@ class MatrixIterator {
                 real_col_count_{real_col_count}
         {}
 
-        // copy assignment because of operator++(int)
-        MatrixIterator operator=(const MatrixIterator& mi) {
-            return {mi.row_, mi.real_col_count_};
-        }
+        explicit MatrixIterator(){} //! removing this breaks std::ranges::range<Matrix<T>>
 
-        reference operator*() {
+        reference operator*() const { //! need to be const
             return row_;
         }
 
@@ -41,7 +38,7 @@ class MatrixIterator {
         }
 
         // postfix
-        value_type operator++(int) {
+        MatrixIterator operator++(int) {
             auto cpy{*this};
             ++(*this);
             return cpy;
@@ -56,8 +53,8 @@ class MatrixIterator {
         }
 
     private:
-        value_type row_;
-        const std::size_t real_col_count_;
+        mutable value_type row_;
+        std::size_t real_col_count_;
 };
 
 } // namespace rage

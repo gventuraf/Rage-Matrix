@@ -1,6 +1,6 @@
 #pragma once
 
-#include "matrix_iterator_with_index.hpp"
+#include "matrix_iterator.hpp"
 #include "col.hpp"
 
 #include <iostream> //!debug
@@ -13,23 +13,22 @@
 #include <ranges>
 #include <span>
 #include <concepts>
+#include <functional>
 
 //* concepts examples: https://itnext.io/c-20-concepts-complete-guide-42c9e009c6bf
-
 //* e.g std::common_type_t<const double, const int> == double
 
 namespace rage
 {
+    //template <typename T, typename Morph = std::function<void()>>
     template <typename T>
     class MatrixView;
 
-    template <typename T>
-    class MatrixView;
-}
+} // namespace rage
 
 template <typename T> //!debug
 void PrintMatrix(const rage::MatrixView<T>& mat) {
-    for (const auto& [idx, row] : mat) {
+    for (const auto& row : mat) {
         for (const auto& elem : row) {
             std::cout << elem << ' ';
         }
@@ -88,7 +87,7 @@ public:
             data_{new T[rows_count_ * cols_count_]},
             view_{View_()}
     {
-        for (auto i{0}; i < data.size(); ++i) {
+        for (std::size_t i{0}; i < data.size(); ++i) {
             assert(data[i].size() == data[0].size() && "Rows must all have same length");
             std::move(data[i].begin(), data[i].end(), data_ + i * cols_count_);
         }
@@ -98,19 +97,53 @@ public:
 
     template <typename W>
     requires std::convertible_to<W, T>
-    Matrix(const Matrix<W>& m); //TODO implement
+    Matrix(const Matrix<W>& m)
+        :   rows_count_{m.RowsCount()},
+            cols_count_{m.ColsCount()},
+            data_{new int[m.Size()]},
+            view_{View_()}
+    {
+        std::copy(m.data_, m.data_ + m.Size(), data_);
+    }
 
     template <typename W>
     requires std::convertible_to<W, T>
-    Matrix<T> operator=(const Matrix<W>& m); //TODO implement
+    Matrix<T> operator=(const Matrix<W>& m)
+    {
+        rows_count_ = m.RowsCount();
+        cols_count_ = m.ColsCount();
+        delete[] data_;
+        data_ = new T[m.Size()];
+        std::copy(m.data_, m.data_ + m.Size(), data_);
+        view_ = View_();
+    }
 
     template <typename W>
     requires std::convertible_to<W, T>
-    Matrix(Matrix<W>&& m); //TODO implement
+    Matrix(Matrix<T>&& m)
+        :   rows_count_{m.RowsCount()},
+            cols_count_{m.ColsCount()},
+            data_{m.data_},
+            view_{View_()}
+    {
+        m.rows_count_ = 0;
+        m.cols_count_ = 0;
+        m.data_ = nullptr;
+    }
 
     template <typename W>
     requires std::convertible_to<W, T>
-    Matrix<T> operator=(Matrix<W>&& m); //TODO implement
+    Matrix<T> operator=(Matrix<T>&& m)
+    {
+        rows_count_ = m.RowsCount();
+        cols_count_ = m.ColsCount();
+        delete[] data_;
+        data_ = m.data_;
+        view_ = View_();
+        m.rows_count_ = 0;
+        m.cols_count_ = 0;
+        m.data_ = nullptr;
+    }
 
     ~Matrix() { delete[] data_; }
 
@@ -165,8 +198,6 @@ public:
         return View();
     }
 
-    //TODO
-    /* remove const from members
     bool ReinterpretDimensions(std::size_t new_row_count, std::size_t new_col_count) {
         if (new_row_count * new_col_count != rows_count_ * cols_count_)
             return false;
@@ -175,7 +206,6 @@ public:
         view_ = View_();
         return true;
     }
-    */
 
 //* Iterators
 public:
@@ -183,14 +213,21 @@ public:
         return MatrixIterator<T>{data_, cols_count_, cols_count_};
     }
     constexpr MatrixIterator<T> end() {
-        return MatrixIterator<T>{data_ + Size(), 0, 0};
+        return MatrixIterator<T>{data_ + Size(), cols_count_, cols_count_};
     }
 
     constexpr MatrixIterator<const T> begin() const {
         return MatrixIterator<const T>{data_, cols_count_, cols_count_};
     }
     constexpr MatrixIterator<const T> end() const {
-        return MatrixIterator<const T>{data_ + Size(), 0, 0};
+        return MatrixIterator<const T>{data_ + Size(), cols_count_, cols_count_};
+    }
+
+    constexpr MatrixIterator<const T> cbegin() const {
+        return begin();
+    }
+    constexpr MatrixIterator<const T> cend() const {
+        return end();
     }
 
 //* Access methods
@@ -236,9 +273,9 @@ private:
     }
 
 private:
-    const std::size_t rows_count_;
-    const std::size_t cols_count_;
-    T* const data_;
+    std::size_t rows_count_;
+    std::size_t cols_count_;
+    T* data_;
     MatrixView<T> view_;
 
 private:
@@ -246,12 +283,36 @@ private:
     template <typename U> friend class Matrix;
 };
 
+//! ***
+//! ***
+//! *** Iterators for Matrix<T>
+//! ***
+
+template <typename T>
+constexpr MatrixIterator<T> begin(Matrix<T>& m) {
+    return MatrixIterator<T>{&m.Data()[0], m.RowsCount(), m.ColsCount()};
+}
+template <typename T>
+constexpr MatrixIterator<T> end(Matrix<T>& m) {
+    return MatrixIterator<T>{&m.Data()[0] + m.Size(), 0, 0};
+}
+
+template <typename T>
+constexpr MatrixIterator<const T> cbegin(const Matrix<T>& m) {
+    return MatrixIterator<const T>{&m.Data()[0], m.RowsCount(), m.ColsCount()};
+}
+template <typename T>
+constexpr MatrixIterator<const T> cend(const Matrix<T>& m) {
+    return MatrixIterator<const T>{&m.Data()[0] + m.Size(), 0, 0};
+}
+
 
 //! ***
 //! ***
 //! *** MatrixView
 //! ***
 
+//template <typename T, typename Morph>
 template <typename T>
 class MatrixView
 {
@@ -332,6 +393,17 @@ public:
     constexpr Column<const T> Col(std::size_t c) const { return Column<const T>{&At(0, c), cols_count_, rows_count_}; }
     constexpr Column<T> Col(std::size_t c) { return Column<T>{&At(0, c), cols_count_, rows_count_}; }
 
+    /*
+    constexpr const T& At(std::size_t r, std::size_t c) const
+    {
+        const auto& elem{data_start_[r * real_col_count_ + c]};
+        if constexpr (std::is_same_v<Morph, std::function<void()>>)
+            return elem;
+        else
+            return morph_(elem);
+    }
+    */
+    
     constexpr const T& At(std::size_t r, std::size_t c) const { return data_start_[r * real_col_count_ + c]; }
     constexpr T& At(std::size_t r, std::size_t c) { return data_start_[r * real_col_count_ + c]; }
 
@@ -360,10 +432,11 @@ private:
     }
 
 private:
-    T* const data_start_;
-    const std::size_t rows_count_;
-    const std::size_t cols_count_;
-    const std::size_t real_col_count_;
+    T* data_start_;
+    std::size_t rows_count_;
+    std::size_t cols_count_;
+    std::size_t real_col_count_;
+    //Morph morph_;
 
 private:
     template <typename U> friend class Matrix;
@@ -498,7 +571,7 @@ template <typename W>
 requires Addable<T, W> && std::convertible_to<W, T>
 constexpr MatrixView<T>& MatrixView<T>::Add(const W& val)
 {
-    for (auto& [_, row] : *this) {
+    for (auto& row : *this) {
         for (auto& elem : row)
             elem += val;
     }
@@ -511,7 +584,7 @@ template <typename W>
 requires Addable<T, W> && std::convertible_to<W, T>
 constexpr MatrixView<T>& MatrixView<T>::Add(const MatrixView<W>& rhs)
 {
-    for (auto& [idx, row] : *this) {
+    for (auto [idx, row] : *this | std::ranges::views::enumerate) {
         auto rhs_row{rhs[idx]};
         for (std::size_t i{0}; i < cols_count_; ++i)
             row[i] += rhs_row[i];
@@ -527,7 +600,9 @@ template <typename W>
 requires Addable<T, W> && std::convertible_to<W, T>
 constexpr MatrixView<T>& MatrixView<T>::Sub(const MatrixView<W>& rhs)
 {
-    for (auto& [idx, row] : *this) {
+    //TODO return Add(rhs.View([](const auto& elem){ return -elem; }));
+    //*
+    for (auto [idx, row] : *this | std::ranges::views::enumerate) {
         auto rhs_row{rhs[idx]};
         for (std::size_t i{0}; i < cols_count_; ++i)
             row[i] -= rhs_row[i];
@@ -640,7 +715,7 @@ constexpr Matrix<R> operator*(const MatrixView<T>& lhs, const MatrixView<W>& rhs
 
     for (std::size_t rhs_col_i{0}; rhs_col_i < cols_count; ++rhs_col_i) {
         const auto rhs_col{rhs.Col(rhs_col_i)};
-        for (const auto& [lhs_row_i, lhs_row] : lhs) {
+        for (const auto& [lhs_row_i, lhs_row] : lhs | std::ranges::views::enumerate) {
             result[lhs_row_i][rhs_col_i] = DotProduct(lhs_row, rhs_col);
         }
     }

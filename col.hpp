@@ -1,7 +1,6 @@
 #pragma once
 
 #include <iterator>
-//#include <cstdlib>
 
 template <typename T>
 class ColumnIterator
@@ -13,23 +12,12 @@ public:
     using pointer           = value_type*;
     using reference         = value_type&;
 
-    explicit ColumnIterator(T* start, std::size_t next_col_offset, std::size_t cols_count)
-        :   start_{start},
-            next_col_offset_{next_col_offset},
-            size_{cols_count}
-    {}
-
-    // copy assignment because of operator++(int)
-    ColumnIterator operator=(const ColumnIterator& ci) {
-        return {ci.start_, ci.next_col_offset_, ci.size_};
-    }
-
-    reference operator*() {
+    reference operator*() const {
         return *start_;
     }
 
     pointer operator->() {
-        return &start_;
+        return start_;
     }
 
     ColumnIterator& operator++() {
@@ -54,7 +42,6 @@ public:
 private:
     T* start_;
     std::size_t next_col_offset_;
-    std::size_t size_;
 };
 
 template <typename T>
@@ -74,11 +61,14 @@ public:
 
     //* Iterators
     ColumnIterator<T> begin() { return ColumnIterator<T>{start_, next_col_offset_, size_}; }
-    ColumnIterator<const S> begin() const { return ColumnIterator<const S>{start_, next_col_offset_, size_}; }
-    ColumnIterator<const S> cbegin() const { return ColumnIterator<const S>{start_, next_col_offset_, size_}; }
     ColumnIterator<T> end() { return ColumnIterator<T>{start_ + next_col_offset_ * size_, 0, 0}; }
+    
+    ColumnIterator<const S> begin() const { return ColumnIterator<const S>{start_, next_col_offset_, size_}; }
     ColumnIterator<const S> end() const { return ColumnIterator<const S>{start_ + next_col_offset_ * size_, 0, 0}; }
-    ColumnIterator<const S> cend() const { return ColumnIterator<const S>{start_ + next_col_offset_ * size_, 0, 0}; }
+    
+    ColumnIterator<const S> cbegin() const { return begin(); }
+    ColumnIterator<const S> cend() const { return end(); }
+
 private:
     T* start_;
     std::size_t next_col_offset_;
