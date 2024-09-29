@@ -20,14 +20,13 @@
 
 namespace rage
 {
-    //template <typename T, typename Morph = std::function<void()>>
-    template <typename T>
+    template <typename T, typename Morph = internal_impl::NoMorphFunction<T>>
     class MatrixView;
 
 } // namespace rage
 
-template <typename T> //!debug
-void PrintMatrix(const rage::MatrixView<T>& mat) {
+template <typename T, typename M> //!debug
+void PrintMatrix(const rage::MatrixView<T, M>& mat) {
     for (const auto& row : mat) {
         for (const auto& elem : row) {
             std::cout << elem << ' ';
@@ -191,6 +190,12 @@ public:
     constexpr MatrixView<T>& View() {
         return view_;
     }
+
+    template <typename Morph>
+    requires std::is_invocable_v<Morph, T>
+    constexpr MatrixView<T, Morph> View(Morph morph) {
+        return MatrixView<T, Morph>{&At(0, 0), rows_count_, cols_count_, cols_count_, morph};
+    }
     
     constexpr MatrixView<const T> View() const {
         return MatrixView<const T>{&At(0, 0), rows_count_, cols_count_, cols_count_};
@@ -281,32 +286,9 @@ private:
     MatrixView<T> view_;
 
 private:
-    template <typename U> friend class MatrixView;
+    template <typename U, typename M> friend class MatrixView;
     template <typename U> friend class Matrix;
 };
-
-//! ***
-//! ***
-//! *** Iterators for Matrix<T>
-//! ***
-
-template <typename T>
-constexpr MatrixIterator<T> begin(Matrix<T>& m) {
-    return MatrixIterator<T>{&m.Data()[0], m.RowsCount(), m.ColsCount()};
-}
-template <typename T>
-constexpr MatrixIterator<T> end(Matrix<T>& m) {
-    return MatrixIterator<T>{&m.Data()[0] + m.Size(), 0, 0};
-}
-
-template <typename T>
-constexpr MatrixIterator<const T> cbegin(const Matrix<T>& m) {
-    return MatrixIterator<const T>{&m.Data()[0], m.RowsCount(), m.ColsCount()};
-}
-template <typename T>
-constexpr MatrixIterator<const T> cend(const Matrix<T>& m) {
-    return MatrixIterator<const T>{&m.Data()[0] + m.Size(), 0, 0};
-}
 
 
 //! ***
@@ -314,8 +296,7 @@ constexpr MatrixIterator<const T> cend(const Matrix<T>& m) {
 //! *** MatrixView
 //! ***
 
-//template <typename T, typename Morph>
-template <typename T>
+template <typename T, typename Morph>
 class MatrixView
 {
 //* Operations
@@ -346,12 +327,12 @@ public:
 
 //* Views
 public:
-    constexpr MatrixView<const T> ConstView(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) const {
+    constexpr MatrixView<const T> ConstView(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) const { //TODO morph_ how?
         const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
         return MatrixView<const T>{&At(rows[0], cols[0]), rows_count, cols_count, cols_count_};
     }
 
-    constexpr MatrixView<T> View(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) {
+    constexpr MatrixView<T> View(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) { //TODO morph_ how?
         const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
         return MatrixView<T>{&At(rows[0], cols[0]), rows_count, cols_count, cols_count_};
     }
@@ -360,28 +341,25 @@ public:
 
 //* Iterators
 public:
-
-    //! if morph_ exists, then do not
-
-    constexpr MatrixIterator<T> begin() {
-        return MatrixIterator<T>{data_start_, cols_count_, real_col_count_};
+    constexpr MatrixIterator<T, Morph> begin() {
+        return MatrixIterator<T, Morph>{data_start_, cols_count_, real_col_count_, morph_};
     }
-    constexpr MatrixIterator<T> end() {
-        return MatrixIterator<T>{data_start_ + rows_count_ * real_col_count_, 0, 0};
+    constexpr MatrixIterator<T, Morph> end() {
+        return MatrixIterator<T, Morph>{data_start_ + rows_count_ * real_col_count_, 0, 0, morph_};
     }
 
-    constexpr MatrixIterator<const T> begin() const {
+    constexpr MatrixIterator<const T, Morph> begin() const {
         return cbegin();
     }
-    constexpr MatrixIterator<const T> end() const {
+    constexpr MatrixIterator<const T, Morph> end() const {
         return cend();
     }
 
-    constexpr MatrixIterator<const T> cbegin() const {
-        return MatrixIterator<const T>{data_start_, cols_count_, real_col_count_};
+    constexpr MatrixIterator<const T, Morph> cbegin() const {
+        return MatrixIterator<const T, Morph>{data_start_, cols_count_, real_col_count_, morph_};
     }
-    constexpr MatrixIterator<const T> cend() const {
-        return MatrixIterator<const T>{data_start_ + rows_count_ * real_col_count_, 0, 0};
+    constexpr MatrixIterator<const T, Morph> cend() const {
+        return MatrixIterator<const T, Morph>{data_start_ + rows_count_ * real_col_count_, 0, 0, morph_};
     }
 
 //* Access methods
@@ -389,14 +367,14 @@ public:
     constexpr inline std::size_t RowsCount() const { return rows_count_; }
     constexpr inline std::size_t ColsCount() const { return cols_count_; }
 
-    constexpr std::span<const T> Row(std::size_t r) const { return std::span<const T>(&At(r, 0), cols_count_); }
-    constexpr std::span<T> Row(std::size_t r) { return std::span<T>(&At(r, 0), cols_count_); }
+    constexpr std::span<const T> Row(std::size_t r) const { return std::span<const T>(&At(r, 0), cols_count_); } //TODO morph_
+    constexpr std::span<T> Row(std::size_t r) { return std::span<T>(&At(r, 0), cols_count_); } //TODO morph_
 
     constexpr std::span<const T> operator[](std::size_t r) const { return Row(r); }
     constexpr std::span<T> operator[](std::size_t r) { return Row(r); }
 
-    constexpr Column<const T> Col(std::size_t c) const { return Column<const T>{&At(0, c), cols_count_, rows_count_}; }
-    constexpr Column<T> Col(std::size_t c) { return Column<T>{&At(0, c), cols_count_, rows_count_}; }
+    constexpr Column<const T> Col(std::size_t c) const { return Column<const T>{&At(0, c), cols_count_, rows_count_}; } //TODO morph_
+    constexpr Column<T> Col(std::size_t c) { return Column<T>{&At(0, c), cols_count_, rows_count_}; } //TODO morph_
 
     /*
     constexpr const T& At(std::size_t r, std::size_t c) const
@@ -409,20 +387,25 @@ public:
     }
     */
     
-    constexpr const T& At(std::size_t r, std::size_t c) const { return data_start_[r * real_col_count_ + c]; }
-    constexpr T& At(std::size_t r, std::size_t c) { return data_start_[r * real_col_count_ + c]; }
+    constexpr const T& At(std::size_t r, std::size_t c) const { return data_start_[r * real_col_count_ + c]; } //TODO morph_
+    constexpr T& At(std::size_t r, std::size_t c) { return data_start_[r * real_col_count_ + c]; } //TODO morph_
 
 //* Lower level operations
 public:
     constexpr std::size_t Size() const { return rows_count_ * cols_count_; }
 
 private:
-    constexpr explicit MatrixView(T* data_start, std::size_t rows_count, std::size_t cols_count, std::size_t real_col_count)
+    constexpr explicit MatrixView(T* data_start, std::size_t rows_count,
+        std::size_t cols_count, std::size_t real_col_count,
+        std::optional<Morph> morph = std::nullopt)
         :   data_start_{data_start},
             rows_count_{rows_count},
             cols_count_{cols_count},
             real_col_count_{real_col_count}
-    {}
+    {
+        if constexpr (!std::is_same_v<Morph, internal_impl::NoMorphFunction<T>>)
+            morph_ = morph.value();
+    }
 
 private:
     constexpr bool CheckView_(std::size_t rows, std::size_t cols) const {
@@ -441,11 +424,11 @@ private:
     std::size_t rows_count_;
     std::size_t cols_count_;
     std::size_t real_col_count_;
-    //Morph morph_;
+    Morph morph_;
 
 private:
     template <typename U> friend class Matrix;
-    template <typename U> friend class MatrixView;
+    template <typename U, typename M> friend class MatrixView;
 };
 
 //! ***
@@ -455,23 +438,23 @@ private:
 
 //*
 //* Addition
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
-constexpr Matrix<R> operator+(const MatrixView<T>& lhs, const MatrixView<W>& rhs);
+template <typename T, typename W, typename MorphOne, typename MorphTwo, typename R = std::common_type_t<T, W>>
+constexpr Matrix<R> operator+(const MatrixView<T, MorphOne>& lhs, const MatrixView<W, MorphTwo>& rhs);
 
 template <typename T, typename W, typename R = std::common_type_t<T, W>>
 inline constexpr Matrix<R> operator+(const Matrix<T>& lhs, const Matrix<W>& rhs) { return lhs.View() + rhs.View(); }
 
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
-inline constexpr Matrix<R> operator+(const Matrix<T>& lhs, const MatrixView<W>& rhs) { return lhs.View() + rhs; }
+template <typename T, typename W, typename Morph, typename R = std::common_type_t<T, W>>
+inline constexpr Matrix<R> operator+(const Matrix<T>& lhs, const MatrixView<W, Morph>& rhs) { return lhs.View() + rhs; }
 
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
-inline constexpr Matrix<R> operator+(const MatrixView<T>& lhs, const Matrix<W>& rhs) { return rhs + lhs; }
+template <typename T, typename W, typename Morph, typename R = std::common_type_t<T, W>>
+inline constexpr Matrix<R> operator+(const MatrixView<T, Morph>& lhs, const Matrix<W>& rhs) { return rhs + lhs; }
 
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
-constexpr Matrix<R> operator+(const MatrixView<T>& lhs, const W& val);
+template <typename T, typename W, typename Morph, typename R = std::common_type_t<T, W>>
+constexpr Matrix<R> operator+(const MatrixView<T, Morph>& lhs, const W& val);
 
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
-inline constexpr Matrix<R> operator+(const W& val, const MatrixView<T>& rhs) { return rhs + val; }
+template <typename T, typename W, typename Morph, typename R = std::common_type_t<T, W>>
+inline constexpr Matrix<R> operator+(const W& val, const MatrixView<T, Morph>& rhs) { return rhs + val; }
 
 template <typename T, typename W, typename R = std::common_type_t<T, W>>
 inline constexpr Matrix<R> operator+(const Matrix<T>& lhs, const W& val) { return lhs.View() + val; }
@@ -487,17 +470,17 @@ constexpr Matrix<R> operator-(const MatrixView<T>& lhs, const MatrixView<W>& rhs
 template <typename T, typename W, typename R = std::common_type_t<T, W>>
 inline constexpr Matrix<R> operator-(const Matrix<T>& lhs, const Matrix<W>& rhs) { return lhs.View() - rhs.View(); }
 
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
-inline constexpr Matrix<R> operator-(const Matrix<T>& lhs, const MatrixView<W>& rhs) { return lhs.View() - rhs; }
+template <typename T, typename W, typename Morph, typename R = std::common_type_t<T, W>>
+inline constexpr Matrix<R> operator-(const Matrix<T>& lhs, const MatrixView<W, Morph>& rhs) { return lhs.View() - rhs; }
 
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
-inline constexpr Matrix<R> operator-(const MatrixView<T>& lhs, const Matrix<W>& rhs) { return rhs - lhs; }
+template <typename T, typename W, typename Morph, typename R = std::common_type_t<T, W>>
+inline constexpr Matrix<R> operator-(const MatrixView<T, Morph>& lhs, const Matrix<W>& rhs) { return rhs - lhs; }
 
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
-constexpr Matrix<R> operator-(const MatrixView<T>& lhs, const W& val);
+template <typename T, typename W, typename Morph, typename R = std::common_type_t<T, W>>
+constexpr Matrix<R> operator-(const MatrixView<T, Morph>& lhs, const W& val);
 
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
-inline constexpr Matrix<R> operator-(const W& val, const MatrixView<T>& rhs);
+template <typename T, typename W, typename Morph, typename R = std::common_type_t<T, W>>
+inline constexpr Matrix<R> operator-(const W& val, const MatrixView<T, Morph>& rhs);
 
 template <typename T, typename W, typename R = std::common_type_t<T, W>>
 inline constexpr Matrix<R> operator-(const Matrix<T>& lhs, const W& val) { return lhs.View() - val; }
@@ -507,29 +490,29 @@ inline constexpr Matrix<R> operator-(const W& val, const Matrix<T>& rhs) { retur
 
 //*
 //* Multiplication
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
+template <typename T, typename W, typename MorphOne, typename MorphTwo, typename R = std::common_type_t<T, W>>
 requires Multipliable<T, W>
-constexpr Matrix<R> operator*(const MatrixView<T>& lhs, const MatrixView<W>& rhs);
+constexpr Matrix<R> operator*(const MatrixView<T, MorphOne>& lhs, const MatrixView<W, MorphTwo>& rhs);
 
 template <typename T, typename W, typename R = std::common_type_t<T, W>>
 requires Multipliable<T, W>
 inline constexpr Matrix<R> operator*(const Matrix<T>& lhs, const Matrix<W>& rhs) { return lhs.View() * rhs.View(); }
 
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
+template <typename T, typename W, typename Morph, typename R = std::common_type_t<T, W>>
 requires Multipliable<T, W>
-inline constexpr Matrix<R> operator*(const Matrix<T>& lhs, const MatrixView<W>& rhs) { return lhs.View() * rhs; }
+inline constexpr Matrix<R> operator*(const Matrix<T>& lhs, const MatrixView<W, Morph>& rhs) { return lhs.View() * rhs; }
 
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
+template <typename T, typename W, typename Morph, typename R = std::common_type_t<T, W>>
 requires Multipliable<T, W>
-inline constexpr Matrix<R> operator*(const MatrixView<T>& lhs, const Matrix<W>& rhs) { return lhs * rhs.View(); }
+inline constexpr Matrix<R> operator*(const MatrixView<T, Morph>& lhs, const Matrix<W>& rhs) { return lhs * rhs.View(); }
 
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
+template <typename T, typename W, typename Morph, typename R = std::common_type_t<T, W>>
 requires Multipliable<T, W>
-constexpr Matrix<R> operator*(const MatrixView<T>& lhs, const W& val);
+constexpr Matrix<R> operator*(const MatrixView<T, Morph>& lhs, const W& val);
 
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
+template <typename T, typename W, typename Morph, typename R = std::common_type_t<T, W>>
 requires Multipliable<T, W>
-inline constexpr Matrix<R> operator*(const W& val, const MatrixView<T>& rhs) { return rhs * val; }
+inline constexpr Matrix<R> operator*(const W& val, const MatrixView<T, Morph>& rhs) { return rhs * val; }
 
 template <typename T, typename W, typename R = std::common_type_t<T, W>>
 requires Multipliable<T, W>
@@ -571,10 +554,10 @@ constexpr R DotProduct(const Column<W>& v1, const std::span<T>& v2)
 namespace rage{
 
 
-template <typename T>
+template <typename T, typename Morph>
 template <typename W>
 requires Addable<T, W> && std::convertible_to<W, T>
-constexpr MatrixView<T>& MatrixView<T>::Add(const W& val)
+constexpr MatrixView<T, Morph>& MatrixView<T, Morph>::Add(const W& val)
 {
     for (auto& row : *this) {
         for (auto& elem : row)
@@ -584,10 +567,10 @@ constexpr MatrixView<T>& MatrixView<T>::Add(const W& val)
     return *this;
 }
 
-template <typename T>
+template <typename T, typename Morph>
 template <typename W>
 requires Addable<T, W> && std::convertible_to<W, T>
-constexpr MatrixView<T>& MatrixView<T>::Add(const MatrixView<W>& rhs)
+constexpr MatrixView<T, Morph>& MatrixView<T, Morph>::Add(const MatrixView<W>& rhs)
 {
     for (auto [idx, row] : *this | std::ranges::views::enumerate) {
         auto rhs_row{rhs[idx]};
@@ -600,10 +583,10 @@ constexpr MatrixView<T>& MatrixView<T>::Add(const MatrixView<W>& rhs)
 
 //! This code "duplication" isn't the best, ideally i'd use the Add to implement Sub
 //TODO change once I have custom piping similar to std::ranges::views
-template <typename T>
+template <typename T, typename Morph>
 template <typename W>
 requires Addable<T, W> && std::convertible_to<W, T>
-constexpr MatrixView<T>& MatrixView<T>::Sub(const MatrixView<W>& rhs)
+constexpr MatrixView<T, Morph>& MatrixView<T, Morph>::Sub(const MatrixView<W>& rhs)
 {
     //TODO return Add(rhs.View([](const auto& elem){ return -elem; }));
     //*
@@ -623,8 +606,8 @@ constexpr MatrixView<T>& MatrixView<T>::Sub(const MatrixView<W>& rhs)
 
 //*
 //* Addition
-template<typename T, typename W, typename R>
-constexpr Matrix<R> operator+(const MatrixView<T>& lhs, const MatrixView<W>& rhs)
+template<typename T, typename W, typename MorphOne, typename MorphTwo, typename R>
+constexpr Matrix<R> operator+(const MatrixView<T, MorphOne>& lhs, const MatrixView<W, MorphTwo>& rhs)
 {
     const auto rows_count{lhs.RowsCount()};
     const auto cols_count{lhs.ColsCount()};
@@ -639,8 +622,8 @@ constexpr Matrix<R> operator+(const MatrixView<T>& lhs, const MatrixView<W>& rhs
     return result;
 }
 
-template <typename T, typename W, typename R>
-constexpr Matrix<R> operator+(const MatrixView<T>& lhs, const W& val)
+template <typename T, typename W, typename Morph, typename R>
+constexpr Matrix<R> operator+(const MatrixView<T, Morph>& lhs, const W& val)
 {
     const auto rows_count{lhs.RowsCount()};
     const auto cols_count{lhs.ColsCount()};
@@ -657,8 +640,8 @@ constexpr Matrix<R> operator+(const MatrixView<T>& lhs, const W& val)
 
 //*
 //* Subtraction
-template<typename T, typename W, typename R>
-constexpr Matrix<R> operator-(const MatrixView<T>& lhs, const MatrixView<W>& rhs)
+template<typename T, typename W, typename MorphOne, typename MorphTwo,  typename R>
+constexpr Matrix<R> operator-(const MatrixView<T, MorphOne>& lhs, const MatrixView<W, MorphTwo>& rhs)
 {
     const auto rows_count{lhs.RowsCount()};
     const auto cols_count{lhs.ColsCount()};
@@ -673,8 +656,8 @@ constexpr Matrix<R> operator-(const MatrixView<T>& lhs, const MatrixView<W>& rhs
     return result;
 }
 
-template <typename T, typename W, typename R>
-constexpr Matrix<R> operator-(const MatrixView<T>& lhs, const W& val)
+template <typename T, typename W, typename Morph, typename R>
+constexpr Matrix<R> operator-(const MatrixView<T, Morph>& lhs, const W& val)
 {
     const auto rows_count{lhs.RowsCount()};
     const auto cols_count{lhs.ColsCount()};
@@ -690,8 +673,8 @@ constexpr Matrix<R> operator-(const MatrixView<T>& lhs, const W& val)
 }
 
 // code duplication of function above
-template <typename T, typename W, typename R>
-inline constexpr Matrix<R> operator-(const W& val, const MatrixView<T>& rhs)
+template <typename T, typename W, typename Morph, typename R>
+inline constexpr Matrix<R> operator-(const W& val, const MatrixView<T, Morph>& rhs)
 {
     const auto rows_count{rhs.RowsCount()};
     const auto cols_count{rhs.ColsCount()};
@@ -709,9 +692,9 @@ inline constexpr Matrix<R> operator-(const W& val, const MatrixView<T>& rhs)
 //*
 //* Multiplication
 
-template <typename T, typename W, typename R>
+template <typename T, typename W, typename MorphOne, typename MorphTwo, typename R>
 requires Multipliable<T, W>
-constexpr Matrix<R> operator*(const MatrixView<T>& lhs, const MatrixView<W>& rhs)
+constexpr Matrix<R> operator*(const MatrixView<T, MorphOne>& lhs, const MatrixView<W, MorphTwo>& rhs)
 {
     const auto rows_count{lhs.RowsCount()};
     const auto cols_count{rhs.ColsCount()};
@@ -728,9 +711,9 @@ constexpr Matrix<R> operator*(const MatrixView<T>& lhs, const MatrixView<W>& rhs
     return result;
 }
 
-template <typename T, typename W, typename R>
+template <typename T, typename W, typename Morph,  typename R>
 requires Multipliable<T, W>
-constexpr Matrix<R> operator*(const MatrixView<T>& lhs, const W& val)
+constexpr Matrix<R> operator*(const MatrixView<T, Morph>& lhs, const W& val)
 {
     const auto rows_count{lhs.RowsCount()};
     const auto cols_count{lhs.ColsCount()};
