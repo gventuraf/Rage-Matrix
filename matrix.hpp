@@ -178,6 +178,7 @@ public:
         const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
         return MatrixView<T>{&At(rows[0], cols[0]), rows_count, cols_count, cols_count_};
     }
+    
     constexpr MatrixView<const T> View(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) const {
         const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
         return MatrixView<const T>{&At(rows[0], cols[0]), rows_count, cols_count, cols_count_};
@@ -190,6 +191,7 @@ public:
     constexpr MatrixView<T>& View() {
         return view_;
     }
+    
     constexpr MatrixView<const T> View() const {
         return MatrixView<const T>{&At(0, 0), rows_count_, cols_count_, cols_count_};
     }
@@ -358,6 +360,9 @@ public:
 
 //* Iterators
 public:
+
+    //! if morph_ exists, then do not
+
     constexpr MatrixIterator<T> begin() {
         return MatrixIterator<T>{data_start_, cols_count_, real_col_count_};
     }
@@ -381,8 +386,8 @@ public:
 
 //* Access methods
 public:
-    inline std::size_t RowsCount() const { return rows_count_; }
-    inline std::size_t ColsCount() const { return cols_count_; }
+    constexpr inline std::size_t RowsCount() const { return rows_count_; }
+    constexpr inline std::size_t ColsCount() const { return cols_count_; }
 
     constexpr std::span<const T> Row(std::size_t r) const { return std::span<const T>(&At(r, 0), cols_count_); }
     constexpr std::span<T> Row(std::size_t r) { return std::span<T>(&At(r, 0), cols_count_); }
