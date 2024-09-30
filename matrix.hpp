@@ -20,7 +20,7 @@
 
 namespace rage
 {
-    template <typename T, typename Morph = internal_impl::NoMorphFunction<T>>
+    template <typename T, typename Morph = internal_impl::DefaultMorph<T>>
     class MatrixView;
 
 } // namespace rage
@@ -190,12 +190,6 @@ public:
     constexpr MatrixView<T>& View() {
         return view_;
     }
-
-    template <typename Morph>
-    requires std::is_invocable_v<Morph, T>
-    constexpr MatrixView<T, Morph> View(Morph morph) {
-        return MatrixView<T, Morph>{&At(0, 0), rows_count_, cols_count_, cols_count_, morph};
-    }
     
     constexpr MatrixView<const T> View() const {
         return MatrixView<const T>{&At(0, 0), rows_count_, cols_count_, cols_count_};
@@ -205,13 +199,21 @@ public:
         return View();
     }
 
-    bool ReinterpretDimensions(std::size_t new_row_count, std::size_t new_col_count) {
-        if (new_row_count * new_col_count != rows_count_ * cols_count_)
-            return false;
-        rows_count_ = new_row_count;
-        cols_count_ = new_col_count;
-        view_ = View_();
-        return true;
+//* Views with a morph function
+//TODO maybe "just" add a new optional parameter in the existing functions
+public:
+    template <typename Morph>
+    requires internal_impl::MorphConcept<Morph, T>
+    constexpr MatrixView<T, Morph> View(Morph&& morph) {
+        return MatrixView<T, Morph>{&At(0, 0), rows_count_, cols_count_, cols_count_,
+                                    std::forward<Morph>(morph)};
+    }
+
+    template <typename Morph>
+    requires internal_impl::MorphConcept<Morph, T>
+    constexpr MatrixView<const T, Morph> View(Morph&& morph) const {
+        return MatrixView<const T, Morph>{&At(0, 0), rows_count_, cols_count_, cols_count_,
+                                          std::forward<Morph>(morph)};
     }
 
 //* Iterators
@@ -262,6 +264,15 @@ public:
 public:
     std::size_t Size() const { return rows_count_ * cols_count_; }
 
+    bool ReinterpretDimensions(std::size_t new_row_count, std::size_t new_col_count) {
+        if (new_row_count * new_col_count != rows_count_ * cols_count_)
+            return false;
+        rows_count_ = new_row_count;
+        cols_count_ = new_col_count;
+        view_ = View_();
+        return true;
+    }
+
 private:
     //TODO should throw?
     constexpr bool CheckView_(std::size_t rows, std::size_t cols) const {
@@ -296,18 +307,31 @@ private:
 //! *** MatrixView
 //! ***
 
+
+//TODO ******************************
+//TODO ******************************
+//TODO ******************************
+//TODO care for case when i requested a morphed view of an already-morpehd view
+//TODO probably define a concept to make it neat
+//TODO and use MatrixView::RealValueType
+
 template <typename T, typename Morph>
+//requires internal_impl::MorphConcept<Morph, T>
 class MatrixView
 {
+    using RealValueType = std::conditional_t<std::is_same_v<Morph, internal_impl::DefaultMorph<T>>,
+                                             T,
+                                             std::invoke_result_t<Morph, T>>;
+
 //* Operations
 public:
     template <typename W>
     requires Addable<T, W> && std::convertible_to<W, T>
     constexpr MatrixView& Add(const W& val);
 
-    template <typename W>
+    template <typename W, typename M>
     requires Addable<T, W> && std::convertible_to<W, T>
-    constexpr MatrixView& Add(const MatrixView<W>& mv);
+    constexpr MatrixView& Add(const MatrixView<W, M>& mv);
 
     template <typename W>
     requires Addable<T, W> && std::convertible_to<W, T>
@@ -317,9 +341,11 @@ public:
     requires Addable<T, W> && std::convertible_to<W, T>
     constexpr MatrixView& Sub(const W& val) { return Add(-val); }
 
-    template <typename W>
+    template <typename W, typename M>
     requires Addable<T, W> && std::convertible_to<W, T>
-    constexpr MatrixView& Sub(const MatrixView<W>& mv);
+    constexpr MatrixView& Sub(const MatrixView<W, M>& rhs) {
+        return Add(rhs.View([](const W& elem){ return -elem; }));
+    }
 
     template <typename W>
     requires Addable<T, W> && std::convertible_to<W, T>
@@ -327,17 +353,26 @@ public:
 
 //* Views
 public:
-    constexpr MatrixView<const T> ConstView(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) const { //TODO morph_ how?
+    constexpr MatrixView<const T> ConstView(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) const { //TODO morph_
         const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
         return MatrixView<const T>{&At(rows[0], cols[0]), rows_count, cols_count, cols_count_};
     }
 
-    constexpr MatrixView<T> View(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) { //TODO morph_ how?
+    constexpr MatrixView<T> View(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) { //TODO morph_
         const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
         return MatrixView<T>{&At(rows[0], cols[0]), rows_count, cols_count, cols_count_};
     }
 
-    //Note: ConstView() ? should it exist?
+    //? Note: ConstView() ? should it exist?
+
+//* View with morph
+public:
+    template <typename NewMorph>
+    requires internal_impl::MorphConcept<NewMorph, RealValueType>
+    constexpr MatrixView<const T, NewMorph> View(NewMorph&& new_morph) const {
+        return MatrixView<const T, NewMorph>{&At(0, 0), rows_count_, cols_count_, cols_count_, std::forward<NewMorph>(new_morph)};
+    }
+
 
 //* Iterators
 public:
@@ -367,26 +402,27 @@ public:
     constexpr inline std::size_t RowsCount() const { return rows_count_; }
     constexpr inline std::size_t ColsCount() const { return cols_count_; }
 
-    constexpr std::span<const T> Row(std::size_t r) const { return std::span<const T>(&At(r, 0), cols_count_); } //TODO morph_
-    constexpr std::span<T> Row(std::size_t r) { return std::span<T>(&At(r, 0), cols_count_); } //TODO morph_
+    constexpr auto Row(std::size_t r) {
+        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
+            return std::span<T>(&At(r, 0), cols_count_);
+        else
+            return std::span<T>(&At(r, 0), cols_count_) | std::views::transform(morph_);
+    }
 
-    constexpr std::span<const T> operator[](std::size_t r) const { return Row(r); }
-    constexpr std::span<T> operator[](std::size_t r) { return Row(r); }
+    constexpr auto Row(std::size_t r) const {
+        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
+            return std::span<const T>(&At(r, 0), cols_count_);
+        else
+            return std::span<const T>(&At(r, 0), cols_count_) | std::views::transform(morph_);
+    }
+
+    constexpr auto operator[](std::size_t r) { return Row(r); }
+
+    constexpr auto operator[](std::size_t r) const { return Row(r); }
 
     constexpr Column<const T> Col(std::size_t c) const { return Column<const T>{&At(0, c), cols_count_, rows_count_}; } //TODO morph_
     constexpr Column<T> Col(std::size_t c) { return Column<T>{&At(0, c), cols_count_, rows_count_}; } //TODO morph_
 
-    /*
-    constexpr const T& At(std::size_t r, std::size_t c) const
-    {
-        const auto& elem{data_start_[r * real_col_count_ + c]};
-        if constexpr (std::is_same_v<Morph, std::function<void()>>)
-            return elem;
-        else
-            return morph_(elem);
-    }
-    */
-    
     constexpr const T& At(std::size_t r, std::size_t c) const { return data_start_[r * real_col_count_ + c]; } //TODO morph_
     constexpr T& At(std::size_t r, std::size_t c) { return data_start_[r * real_col_count_ + c]; } //TODO morph_
 
@@ -403,7 +439,7 @@ private:
             cols_count_{cols_count},
             real_col_count_{real_col_count}
     {
-        if constexpr (!std::is_same_v<Morph, internal_impl::NoMorphFunction<T>>)
+        if constexpr (!std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
             morph_ = morph.value();
     }
 
@@ -412,7 +448,9 @@ private:
         return rows <= rows_count_ && cols <= cols_count_;
     }
 
-    constexpr std::tuple<std::size_t, std::size_t> ViewImpl_(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) const {
+    constexpr std::tuple<std::size_t, std::size_t> ViewImpl_(const std::array<std::size_t, 2>& rows,
+                                                             const std::array<std::size_t, 2>& cols) const
+    {
         const auto rows_count{rows[1] - rows[0] + 1};
         const auto cols_count{cols[1] - cols[0] + 1};
         CheckView_(rows_count, cols_count); //! ignored return value
@@ -464,8 +502,13 @@ inline constexpr Matrix<R> operator+(const W& val, const Matrix<T>& rhs) { retur
 
 //*
 //* Subtraction
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
-constexpr Matrix<R> operator-(const MatrixView<T>& lhs, const MatrixView<W>& rhs);
+template <typename T, typename W, typename MorphOne, typename MorphTwo, typename R = std::common_type_t<T, W>>
+inline constexpr Matrix<R> operator-(const MatrixView<T, MorphOne>& lhs, const MatrixView<W, MorphTwo>& rhs) {
+    return lhs + rhs.View([](const T& val) { return -val; });
+    // just for fun, if instead of +, you use - the compiler will go on forever
+    // compile time recursion, very cool
+    // "for your next interview question, take a look at..."
+}
 
 template <typename T, typename W, typename R = std::common_type_t<T, W>>
 inline constexpr Matrix<R> operator-(const Matrix<T>& lhs, const Matrix<W>& rhs) { return lhs.View() - rhs.View(); }
@@ -477,10 +520,12 @@ template <typename T, typename W, typename Morph, typename R = std::common_type_
 inline constexpr Matrix<R> operator-(const MatrixView<T, Morph>& lhs, const Matrix<W>& rhs) { return rhs - lhs; }
 
 template <typename T, typename W, typename Morph, typename R = std::common_type_t<T, W>>
-constexpr Matrix<R> operator-(const MatrixView<T, Morph>& lhs, const W& val);
+inline constexpr Matrix<R> operator-(const MatrixView<T, Morph>& lhs, const W& val) { return lhs + (-val); }
 
 template <typename T, typename W, typename Morph, typename R = std::common_type_t<T, W>>
-inline constexpr Matrix<R> operator-(const W& val, const MatrixView<T, Morph>& rhs);
+inline constexpr Matrix<R> operator-(const W& val, const MatrixView<T, Morph>& rhs) {
+    return rhs.View([](const T& val) { return -val; }) + val;
+}
 
 template <typename T, typename W, typename R = std::common_type_t<T, W>>
 inline constexpr Matrix<R> operator-(const Matrix<T>& lhs, const W& val) { return lhs.View() - val; }
@@ -568,32 +613,14 @@ constexpr MatrixView<T, Morph>& MatrixView<T, Morph>::Add(const W& val)
 }
 
 template <typename T, typename Morph>
-template <typename W>
+template <typename W, typename M>
 requires Addable<T, W> && std::convertible_to<W, T>
-constexpr MatrixView<T, Morph>& MatrixView<T, Morph>::Add(const MatrixView<W>& rhs)
+constexpr MatrixView<T, Morph>& MatrixView<T, Morph>::Add(const MatrixView<W, M>& rhs)
 {
     for (auto [idx, row] : *this | std::ranges::views::enumerate) {
         auto rhs_row{rhs[idx]};
         for (std::size_t i{0}; i < cols_count_; ++i)
             row[i] += rhs_row[i];
-    }
-
-    return *this;
-}
-
-//! This code "duplication" isn't the best, ideally i'd use the Add to implement Sub
-//TODO change once I have custom piping similar to std::ranges::views
-template <typename T, typename Morph>
-template <typename W>
-requires Addable<T, W> && std::convertible_to<W, T>
-constexpr MatrixView<T, Morph>& MatrixView<T, Morph>::Sub(const MatrixView<W>& rhs)
-{
-    //TODO return Add(rhs.View([](const auto& elem){ return -elem; }));
-    //*
-    for (auto [idx, row] : *this | std::ranges::views::enumerate) {
-        auto rhs_row{rhs[idx]};
-        for (std::size_t i{0}; i < cols_count_; ++i)
-            row[i] -= rhs_row[i];
     }
 
     return *this;
@@ -633,57 +660,6 @@ constexpr Matrix<R> operator+(const MatrixView<T, Morph>& lhs, const W& val)
     for (std::size_t r{0}; r < rows_count; ++r) {
         for (std::size_t c{0}; c < cols_count; ++c)
             result[r][c] = lhs[r][c] + val;
-    }
-    
-    return result;
-}
-
-//*
-//* Subtraction
-template<typename T, typename W, typename MorphOne, typename MorphTwo,  typename R>
-constexpr Matrix<R> operator-(const MatrixView<T, MorphOne>& lhs, const MatrixView<W, MorphTwo>& rhs)
-{
-    const auto rows_count{lhs.RowsCount()};
-    const auto cols_count{lhs.ColsCount()};
-    
-    Matrix<R> result(rows_count, cols_count);
-    
-    for (std::size_t r{0}; r < rows_count; ++r) {
-        for (std::size_t c{0}; c < cols_count; ++c)
-            result[r][c] = lhs[r][c] - rhs[r][c];
-    }
-    
-    return result;
-}
-
-template <typename T, typename W, typename Morph, typename R>
-constexpr Matrix<R> operator-(const MatrixView<T, Morph>& lhs, const W& val)
-{
-    const auto rows_count{lhs.RowsCount()};
-    const auto cols_count{lhs.ColsCount()};
-    
-    Matrix<R> result(rows_count, cols_count);
-    
-    for (std::size_t r{0}; r < rows_count; ++r) {
-        for (std::size_t c{0}; c < cols_count; ++c)
-            result[r][c] = lhs[r][c] - val;
-    }
-    
-    return result;
-}
-
-// code duplication of function above
-template <typename T, typename W, typename Morph, typename R>
-inline constexpr Matrix<R> operator-(const W& val, const MatrixView<T, Morph>& rhs)
-{
-    const auto rows_count{rhs.RowsCount()};
-    const auto cols_count{rhs.ColsCount()};
-    
-    Matrix<R> result(rows_count, cols_count);
-    
-    for (std::size_t r{0}; r < rows_count; ++r) {
-        for (std::size_t c{0}; c < cols_count; ++c)
-            result[r][c] = val - rhs[r][c];
     }
     
     return result;
