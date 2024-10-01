@@ -21,6 +21,7 @@
 namespace rage
 {
     template <typename T, typename Morph = internal_impl::DefaultMorph<T>>
+    // requires internal_impl::MorphConcept<Morph, T> - weird, does not compile
     class MatrixView;
 
 } // namespace rage
@@ -173,6 +174,18 @@ public:
 
 //* Views
 public:
+    constexpr MatrixView<T>& View() {
+        return view_;
+    }
+    
+    constexpr MatrixView<const T> View() const {
+        return MatrixView<const T>{&At(0, 0), rows_count_, cols_count_, cols_count_};
+    }
+
+    constexpr MatrixView<const T> ConstView() const {
+        return View();
+    }
+
     constexpr MatrixView<T> View(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) {
         const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
         return MatrixView<T>{&At(rows[0], cols[0]), rows_count, cols_count, cols_count_};
@@ -185,18 +198,6 @@ public:
 
     constexpr MatrixView<const T> ConstView(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) const {
         return View(rows, cols);
-    }
-
-    constexpr MatrixView<T>& View() {
-        return view_;
-    }
-    
-    constexpr MatrixView<const T> View() const {
-        return MatrixView<const T>{&At(0, 0), rows_count_, cols_count_, cols_count_};
-    }
-
-    constexpr MatrixView<const T> ConstView() const {
-        return View();
     }
 
 //* Views with a morph function
@@ -214,6 +215,26 @@ public:
     constexpr MatrixView<const T, Morph> View(Morph&& morph) const {
         return MatrixView<const T, Morph>{&At(0, 0), rows_count_, cols_count_, cols_count_,
                                           std::forward<Morph>(morph)};
+    }
+
+    template <typename Morph>
+    requires internal_impl::MorphConcept<Morph, T>
+    constexpr MatrixView<const T, Morph> ConstView(Morph&& morph) const {
+        return View();
+    }
+
+    template <typename Morph>
+    requires internal_impl::MorphConcept<Morph, T>
+    constexpr MatrixView<T, Morph> View(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols, Morph&& morph) {
+        const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
+        return MatrixView<T, Morph>{&At(rows[0], cols[0]), rows_count, cols_count, cols_count_, std::forward<Morph>(morph)};
+    }
+
+    template <typename Morph>
+    requires internal_impl::MorphConcept<Morph, T>
+    constexpr MatrixView<const T, Morph> View(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols, Morph&& morph) {
+        const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
+        return MatrixView<const T, Morph>{&At(rows[0], cols[0]), rows_count, cols_count, cols_count_, std::forward<Morph>(morph)};
     }
 
 //* Iterators
@@ -307,16 +328,8 @@ private:
 //! *** MatrixView
 //! ***
 
-
-//TODO ******************************
-//TODO ******************************
-//TODO ******************************
-//TODO care for case when i requested a morphed view of an already-morpehd view
-//TODO probably define a concept to make it neat
-//TODO and use MatrixView::RealValueType
-
 template <typename T, typename Morph>
-//requires internal_impl::MorphConcept<Morph, T>
+// requires internal_impl::MorphConcept<Morph, T> - weird, does not compile
 class MatrixView
 {
     using RealValueType = std::conditional_t<std::is_same_v<Morph, internal_impl::DefaultMorph<T>>,
@@ -353,24 +366,69 @@ public:
 
 //* Views
 public:
-    constexpr MatrixView<const T> ConstView(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) const { //TODO morph_
+    constexpr MatrixView<const T> ConstView(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) const {
         const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
-        return MatrixView<const T>{&At(rows[0], cols[0]), rows_count, cols_count, cols_count_};
+        return MatrixView<const T>{&RealAt(rows[0], cols[0]), rows_count, cols_count, cols_count_};
     }
 
-    constexpr MatrixView<T> View(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) { //TODO morph_
+    constexpr MatrixView<T> View(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) {
         const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
-        return MatrixView<T>{&At(rows[0], cols[0]), rows_count, cols_count, cols_count_};
+        return MatrixView<T>{&RealAt(rows[0], cols[0]), rows_count, cols_count, cols_count_};
     }
 
-    //? Note: ConstView() ? should it exist?
 
 //* View with morph
+//TODO ******************************
+//TODO confirm if im creating copies of the function/lambda/object create MyStruct { ctor; operator() } to check
 public:
     template <typename NewMorph>
     requires internal_impl::MorphConcept<NewMorph, RealValueType>
     constexpr MatrixView<const T, NewMorph> View(NewMorph&& new_morph) const {
-        return MatrixView<const T, NewMorph>{&At(0, 0), rows_count_, cols_count_, cols_count_, std::forward<NewMorph>(new_morph)};
+        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
+            return MatrixView<const T, NewMorph>{&RealAt(0, 0), rows_count_, cols_count_, cols_count_, new_morph};
+        else
+            return MatrixView<const T, NewMorph>{&RealAt(0, 0), rows_count_, cols_count_, cols_count_,
+                                                [this, new_morph](const T& v) { return new_morph(morph_(v)); }};
+    }
+
+    template <typename NewMorph>
+    requires internal_impl::MorphConcept<NewMorph, RealValueType>
+    constexpr MatrixView<T, NewMorph> View(NewMorph&& new_morph) {
+        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
+            return MatrixView<T, NewMorph>{&RealAt(0, 0), rows_count_, cols_count_, cols_count_, new_morph};
+        else
+            return MatrixView<T, NewMorph>{&RealAt(0, 0), rows_count_, cols_count_, cols_count_,
+                                                [this, new_morph](const T& v) { return new_morph(morph_(v)); }};
+    }
+
+    template <typename NewMorph>
+    requires internal_impl::MorphConcept<NewMorph, RealValueType>
+    constexpr MatrixView<const T, NewMorph> ConstView(NewMorph&& new_morph) const {
+        return View();
+    }
+
+    template <typename NewMorph>
+    requires internal_impl::MorphConcept<NewMorph, RealValueType>
+    constexpr MatrixView<T> View(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols, Morph&& new_morph) const {
+        const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
+        
+        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
+            return MatrixView<T, NewMorph>{&RealAt(rows[0], cols[0]), rows_count, cols_count, cols_count_, new_morph};
+        else
+            return MatrixView<T, NewMorph>{&RealAt(rows[0], cols[0]), rows_count, cols_count, cols_count_,
+                                                [this, new_morph](const T& v) { return new_morph(morph_(v)); }};
+    }
+
+    template <typename NewMorph>
+    requires internal_impl::MorphConcept<NewMorph, RealValueType>
+    constexpr MatrixView<const T> ConstView(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols, Morph&& new_morph) const {
+        const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
+        
+        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
+            return MatrixView<const T, NewMorph>{&RealAt(rows[0], cols[0]), rows_count, cols_count, cols_count_, new_morph};
+        else
+            return MatrixView<const T, NewMorph>{&RealAt(rows[0], cols[0]), rows_count, cols_count, cols_count_,
+                                                [this, new_morph](const T& v) { return new_morph(morph_(v)); }};
     }
 
 
@@ -404,27 +462,44 @@ public:
 
     constexpr auto Row(std::size_t r) {
         if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
-            return std::span<T>(&At(r, 0), cols_count_);
+            return std::span<T>(&RealAt(r, 0), cols_count_);
         else
-            return std::span<T>(&At(r, 0), cols_count_) | std::views::transform(morph_);
+            return std::span<T>(&RealAt(r, 0), cols_count_) | std::views::transform(morph_);
     }
 
     constexpr auto Row(std::size_t r) const {
         if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
-            return std::span<const T>(&At(r, 0), cols_count_);
+            return std::span<const T>(&RealAt(r, 0), cols_count_);
         else
-            return std::span<const T>(&At(r, 0), cols_count_) | std::views::transform(morph_);
+            return std::span<const T>(&RealAt(r, 0), cols_count_) | std::views::transform(morph_);
     }
 
     constexpr auto operator[](std::size_t r) { return Row(r); }
 
     constexpr auto operator[](std::size_t r) const { return Row(r); }
 
-    constexpr Column<const T> Col(std::size_t c) const { return Column<const T>{&At(0, c), cols_count_, rows_count_}; } //TODO morph_
-    constexpr Column<T> Col(std::size_t c) { return Column<T>{&At(0, c), cols_count_, rows_count_}; } //TODO morph_
+    constexpr Column<const T, Morph> Col(std::size_t c) const {
+        return Column<const T, Morph>{&RealAt(0, c), cols_count_, rows_count_, morph_};
+    }
+    constexpr Column<T, Morph> Col(std::size_t c) {
+        return Column<T, Morph>{&RealAt(0, c), cols_count_, rows_count_};
+    }
 
-    constexpr const T& At(std::size_t r, std::size_t c) const { return data_start_[r * real_col_count_ + c]; } //TODO morph_
-    constexpr T& At(std::size_t r, std::size_t c) { return data_start_[r * real_col_count_ + c]; } //TODO morph_
+    constexpr std::conditional_t<std::is_same_v<Morph, internal_impl::DefaultMorph<T>>, const T&, RealValueType>
+    At(std::size_t r, std::size_t c) const {
+        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
+            return data_start_[r * real_col_count_ + c];
+        else
+            return morph(data_start_[r * real_col_count_ + c]);
+    }
+    
+    constexpr std::conditional_t<std::is_same_v<Morph, internal_impl::DefaultMorph<T>>, T&, RealValueType>
+    At(std::size_t r, std::size_t c) {
+        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
+            return data_start_[r * real_col_count_ + c];
+        else
+            return morph(data_start_[r * real_col_count_ + c]);
+    }
 
 //* Lower level operations
 public:
@@ -456,6 +531,9 @@ private:
         CheckView_(rows_count, cols_count); //! ignored return value
         return {rows_count, cols_count};
     }
+
+    constexpr const T& RealAt(std::size_t r, std::size_t c) const { return data_start_[r * real_col_count_ + c]; }
+    constexpr T& RealAt(std::size_t r, std::size_t c) { return data_start_[r * real_col_count_ + c]; }
 
 private:
     T* data_start_;
@@ -524,7 +602,7 @@ inline constexpr Matrix<R> operator-(const MatrixView<T, Morph>& lhs, const W& v
 
 template <typename T, typename W, typename Morph, typename R = std::common_type_t<T, W>>
 inline constexpr Matrix<R> operator-(const W& val, const MatrixView<T, Morph>& rhs) {
-    return rhs.View([](const T& val) { return -val; }) + val;
+    return rhs.View([](const T& t) { return -t; }) + val;
 }
 
 template <typename T, typename W, typename R = std::common_type_t<T, W>>
@@ -575,8 +653,8 @@ inline constexpr Matrix<R> operator*(const W& val, const Matrix<T>& rhs) { retur
 //! Utils Implementation
 //! ***
 
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
-constexpr R DotProduct(const std::span<T>& v1, const Column<W>& v2)
+template <typename T, typename W, typename M, typename R = std::common_type_t<T, W>>
+constexpr R DotProduct(const std::span<T>& v1, const Column<W, M>& v2)
 {
     const auto len{v1.size()};
     R total{};
@@ -585,8 +663,8 @@ constexpr R DotProduct(const std::span<T>& v1, const Column<W>& v2)
     return total;
 }
 
-template <typename T, typename W, typename R = std::common_type_t<T, W>>
-constexpr R DotProduct(const Column<W>& v1, const std::span<T>& v2)
+template <typename T, typename W, typename M, typename R = std::common_type_t<T, W>>
+constexpr R DotProduct(const Column<W, M>& v1, const std::span<T>& v2)
 {
     return DotProduct(v2, v1);
 }

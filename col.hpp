@@ -1,8 +1,10 @@
 #pragma once
 
 #include <iterator>
+#include "matrix_iterator.hpp"
 
-template <typename T>
+// can rename to NonContiguousIterator
+template <typename T, typename Morph>
 class ColumnIterator
 {
 public:
@@ -12,12 +14,26 @@ public:
     using pointer           = value_type*;
     using reference         = value_type&;
 
+    using RealValueType = std::conditional_t<std::is_same_v<Morph, internal_impl::DefaultMorph<T>>,
+                                             T,
+                                             std::invoke_result_t<Morph, T>>;
+
     reference operator*() const {
-        return *start_;
+        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>) {
+            return *start_;
+        } else {
+            morphed_val_ = morph_(*start_);
+            return morphed_val_.value();
+        }
     }
 
     pointer operator->() {
-        return start_;
+        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>) {
+            return start_;
+        } else {
+            morphed_val_ = morph_(*start_);
+            return &(morphed_val_.value());
+        }
     }
 
     ColumnIterator& operator++() {
@@ -42,35 +58,60 @@ public:
 private:
     T* start_;
     std::size_t next_col_offset_;
+    std::optional<RealValueType> morphed_val_;
+    Morph morph_;
 };
 
-template <typename T>
+template <typename T, typename Morph = internal_impl::DefaultMorph<T>>
 class Column
 {
-    using S = std::remove_const_t<T>;
+    //using S = std::remove_const_t<T>;
+    using RealValueType = std::conditional_t<std::is_same_v<Morph, internal_impl::DefaultMorph<T>>,
+                                             T,
+                                             std::invoke_result_t<Morph, T>>;
+
 public:
-    explicit Column(T* start, std::size_t next_col_offset, std::size_t cols_count)
+    constexpr explicit Column(T* start, std::size_t next_col_offset, std::size_t cols_count,
+                    std::optional<Morph> morph = std::nullopt)
         :   start_{start},
             next_col_offset_{next_col_offset},
             size_{cols_count}
-    {}
+    {
+        if constexpr (!std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
+            morph_ = morph.value();
+    }
     
-    T& operator[](std::size_t idx) { return start_[idx * next_col_offset_]; }
-    const T& operator[](std::size_t idx) const { return start_[idx * next_col_offset_]; }
-    std::size_t Size() const { return size_; }
+    constexpr std::conditional_t<std::is_same_v<Morph, internal_impl::DefaultMorph<T>>, T&, RealValueType>
+    operator[](std::size_t idx) {
+        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
+            return start_[idx * next_col_offset_];
+        else
+            return morph_(start_[idx * next_col_offset_]);
+    }
+    
+    constexpr std::conditional_t<std::is_same_v<Morph, internal_impl::DefaultMorph<T>>, const T&, RealValueType>
+    operator[](std::size_t idx) const {
+        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
+            return start_[idx * next_col_offset_];
+        else
+            return morph_(start_[idx * next_col_offset_]);
+    }
+    
+    constexpr std::size_t Size() const { return size_; }
 
     //* Iterators
-    ColumnIterator<T> begin() { return ColumnIterator<T>{start_, next_col_offset_, size_}; }
-    ColumnIterator<T> end() { return ColumnIterator<T>{start_ + next_col_offset_ * size_, 0, 0}; }
+    ColumnIterator<T, Morph> begin() { return ColumnIterator<T, Morph>{start_, next_col_offset_, morph_}; }
+    ColumnIterator<T, Morph> end() { return ColumnIterator<T, Morph>{start_ + next_col_offset_ * size_, 0, morph_}; }
     
-    ColumnIterator<const S> begin() const { return ColumnIterator<const S>{start_, next_col_offset_, size_}; }
-    ColumnIterator<const S> end() const { return ColumnIterator<const S>{start_ + next_col_offset_ * size_, 0, 0}; }
+    ColumnIterator<const T, Morph> begin() const { return ColumnIterator<const T, Morph>{start_, next_col_offset_, morph_}; }
+    ColumnIterator<const T, Morph> end() const { return ColumnIterator<const T, Morph>{start_ + next_col_offset_ * size_, 0, morph_}; }
     
-    ColumnIterator<const S> cbegin() const { return begin(); }
-    ColumnIterator<const S> cend() const { return end(); }
+    ColumnIterator<const T, Morph> cbegin() const { return begin(); }
+    ColumnIterator<const T, Morph> cend() const { return end(); }
 
 private:
     T* start_;
     std::size_t next_col_offset_;
     std::size_t size_;
+    Morph morph_;
 };
