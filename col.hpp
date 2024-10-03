@@ -3,6 +3,8 @@
 #include <iterator>
 #include "matrix_iterator.hpp"
 
+namespace rage {
+
 // can rename to NonContiguousIterator
 template <typename T, typename Morph>
 class ColumnIterator
@@ -17,6 +19,16 @@ public:
     using RealValueType = std::conditional_t<std::is_same_v<Morph, internal_impl::DefaultMorph<T>>,
                                              T,
                                              std::invoke_result_t<Morph, T>>;
+
+    explicit ColumnIterator(T* start, std::size_t next_col_offset, std::optional<Morph> morph)
+    :   start_{start},
+        next_col_offset_{next_col_offset}
+    {
+        if constexpr(!std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
+            morph_ = morph.value();
+    }
+
+    explicit ColumnIterator(){} //! removing this breaks std::ranges::range<Matrix<T>>, aka breaks everything
 
     reference operator*() const {
         if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>) {
@@ -58,9 +70,10 @@ public:
 private:
     T* start_;
     std::size_t next_col_offset_;
-    std::optional<RealValueType> morphed_val_;
     Morph morph_;
+    std::optional<RealValueType> morphed_val_;
 };
+
 
 template <typename T, typename Morph = internal_impl::DefaultMorph<T>>
 class Column
@@ -97,6 +110,7 @@ public:
             return morph_(start_[idx * next_col_offset_]);
     }
     
+    //TODO since this is a range, to keep the api the same, maybe change to size() with lowercase s
     constexpr std::size_t Size() const { return size_; }
 
     //* Iterators
@@ -115,3 +129,5 @@ private:
     std::size_t size_;
     Morph morph_;
 };
+
+} // namespace rage

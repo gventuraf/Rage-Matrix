@@ -3,11 +3,8 @@
 #include "matrix_iterator.hpp"
 #include "col.hpp"
 
-#include <iostream> //!debug
-
 #include <array>
 #include <vector>
-#include <initializer_list>
 #include <cassert>
 #include <algorithm>
 #include <ranges>
@@ -18,6 +15,9 @@
 //* concepts examples: https://itnext.io/c-20-concepts-complete-guide-42c9e009c6bf
 //* e.g std::common_type_t<const double, const int> == double
 
+template <typename T>
+class TD; //! debug
+
 namespace rage
 {
     template <typename T, typename Morph = internal_impl::DefaultMorph<T>>
@@ -25,17 +25,6 @@ namespace rage
     class MatrixView;
 
 } // namespace rage
-
-template <typename T, typename M> //!debug
-void PrintMatrix(const rage::MatrixView<T, M>& mat) {
-    for (const auto& row : mat) {
-        for (const auto& elem : row) {
-            std::cout << elem << ' ';
-        }
-        std::cout << '\n';
-    }
-    std::cout << "************" <<std::endl;
-}
 
 namespace {
 
@@ -73,7 +62,7 @@ template <typename T>
 class Matrix
 {
 public:
-    explicit Matrix(std::size_t rows, std::size_t cols)
+    constexpr explicit Matrix(std::size_t rows, std::size_t cols)
         :   rows_count_{rows},
             cols_count_{cols},
             data_{new T[rows * cols]},
@@ -81,14 +70,14 @@ public:
     {}
 
     //TODO change this to take in a range<range<T>>
-    explicit Matrix(std::vector<std::vector<T>>&& data)
+    constexpr  explicit Matrix(std::vector<std::vector<T>>&& data)
         :   rows_count_{data.size()},
             cols_count_{data.size()},
             data_{new T[rows_count_ * cols_count_]},
             view_{View_()}
     {
         for (std::size_t i{0}; i < data.size(); ++i) {
-            assert(data[i].size() == data[0].size() && "Rows must all have same length");
+            assert(data[i].size() == data[0].size() && "Rows must all have same length"); //TODO
             std::move(data[i].begin(), data[i].end(), data_ + i * cols_count_);
         }
     }
@@ -97,7 +86,7 @@ public:
 
     template <typename W>
     requires std::convertible_to<W, T>
-    Matrix(const Matrix<W>& m)
+    constexpr  Matrix(const Matrix<W>& m)
         :   rows_count_{m.RowsCount()},
             cols_count_{m.ColsCount()},
             data_{new int[m.Size()]},
@@ -108,7 +97,7 @@ public:
 
     template <typename W>
     requires std::convertible_to<W, T>
-    Matrix<T> operator=(const Matrix<W>& m)
+    constexpr  Matrix<T> operator=(const Matrix<W>& m)
     {
         rows_count_ = m.RowsCount();
         cols_count_ = m.ColsCount();
@@ -120,7 +109,7 @@ public:
 
     template <typename W>
     requires std::convertible_to<W, T>
-    Matrix(Matrix<T>&& m)
+    constexpr  Matrix(Matrix<T>&& m)
         :   rows_count_{m.RowsCount()},
             cols_count_{m.ColsCount()},
             data_{m.data_},
@@ -133,7 +122,7 @@ public:
 
     template <typename W>
     requires std::convertible_to<W, T>
-    Matrix<T> operator=(Matrix<T>&& m)
+    constexpr  Matrix<T> operator=(Matrix<T>&& m)
     {
         rows_count_ = m.RowsCount();
         cols_count_ = m.ColsCount();
@@ -145,7 +134,7 @@ public:
         m.data_ = nullptr;
     }
 
-    ~Matrix() { delete[] data_; }
+    constexpr ~Matrix() { delete[] data_; }
 
 public:
     template <typename W>
@@ -171,6 +160,8 @@ public:
     template <typename W>
     requires Addable<T, W> && std::convertible_to<W, T>
     constexpr Matrix<T>& Sub(const Matrix<W>& m) { return Sub(m.view_); }
+
+    //TODO Mult by a T val; also for MatrixView
 
 //* Views
 public:
@@ -303,7 +294,7 @@ private:
     constexpr std::tuple<std::size_t, std::size_t> ViewImpl_(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) const {
         const auto rows_count{rows[1] - rows[0] + 1};
         const auto cols_count{cols[1] - cols[0] + 1};
-        CheckView_(rows_count, cols_count); //! ignored return value
+        std::ignore = CheckView_(rows_count, cols_count); //TODO: ignoring return value
         return {rows_count, cols_count};
     }
 
@@ -322,6 +313,40 @@ private:
     template <typename U> friend class Matrix;
 };
 
+//*
+//* Comparison
+
+//TODO fix the requires, take account that morph may change type
+
+template <typename T, typename W, typename M1, typename M2>
+//requires std::equality_comparable_with<T, W>
+constexpr bool operator==(const MatrixView<T, M1>& lhs, const MatrixView<W, M2>& rhs) {
+    for (const auto& [lrow, rrow] : std::views::zip(lhs, rhs)) {
+        for (const auto& [lval, rval] : std::views::zip(lrow, rrow)) {
+            if (lval != rval) return false;
+        }
+    }
+    
+    return true;
+}
+
+template <typename T, typename W>
+//requires std::equality_comparable_with<T, W>
+constexpr bool operator==(const MatrixView<T>& lhs, const Matrix<W>& rhs) {
+    return lhs == rhs.View();
+}
+
+template <typename T, typename W, typename M>
+//requires std::equality_comparable_with<T, W>
+constexpr bool operator==(const Matrix<T>& lhs, const MatrixView<W, M>& rhs) {
+    return lhs.View() == rhs;
+}
+
+template <typename T, typename W>
+//requires std::equality_comparable_with<T, W>
+constexpr bool operator==(const Matrix<T>& lhs, const Matrix<W>& rhs) {
+    return lhs.View() == rhs.View();
+}
 
 //! ***
 //! ***
@@ -366,11 +391,6 @@ public:
 
 //* Views
 public:
-    constexpr MatrixView<const T> ConstView(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) const {
-        const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
-        return MatrixView<const T>{&RealAt(rows[0], cols[0]), rows_count, cols_count, cols_count_};
-    }
-
     constexpr MatrixView<T> View(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols) {
         const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
         return MatrixView<T>{&RealAt(rows[0], cols[0]), rows_count, cols_count, cols_count_};
@@ -378,57 +398,50 @@ public:
 
 
 //* View with morph
-//TODO ******************************
 //TODO confirm if im creating copies of the function/lambda/object create MyStruct { ctor; operator() } to check
 public:
     template <typename NewMorph>
     requires internal_impl::MorphConcept<NewMorph, RealValueType>
-    constexpr MatrixView<const T, NewMorph> View(NewMorph&& new_morph) const {
-        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
-            return MatrixView<const T, NewMorph>{&RealAt(0, 0), rows_count_, cols_count_, cols_count_, new_morph};
-        else
-            return MatrixView<const T, NewMorph>{&RealAt(0, 0), rows_count_, cols_count_, cols_count_,
-                                                [this, new_morph](const T& v) { return new_morph(morph_(v)); }};
-    }
-
-    template <typename NewMorph>
-    requires internal_impl::MorphConcept<NewMorph, RealValueType>
-    constexpr MatrixView<T, NewMorph> View(NewMorph&& new_morph) {
-        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
-            return MatrixView<T, NewMorph>{&RealAt(0, 0), rows_count_, cols_count_, cols_count_, new_morph};
-        else
-            return MatrixView<T, NewMorph>{&RealAt(0, 0), rows_count_, cols_count_, cols_count_,
-                                                [this, new_morph](const T& v) { return new_morph(morph_(v)); }};
-    }
-
-    template <typename NewMorph>
-    requires internal_impl::MorphConcept<NewMorph, RealValueType>
-    constexpr MatrixView<const T, NewMorph> ConstView(NewMorph&& new_morph) const {
-        return View();
-    }
-
-    template <typename NewMorph>
-    requires internal_impl::MorphConcept<NewMorph, RealValueType>
-    constexpr MatrixView<T> View(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols, Morph&& new_morph) const {
+    auto View(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols, NewMorph&& new_morph)
+    {
         const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
+        using ret_type = typename decltype(std::function{std::declval<NewMorph>()})::result_type;
         
-        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
-            return MatrixView<T, NewMorph>{&RealAt(rows[0], cols[0]), rows_count, cols_count, cols_count_, new_morph};
-        else
-            return MatrixView<T, NewMorph>{&RealAt(rows[0], cols[0]), rows_count, cols_count, cols_count_,
-                                                [this, new_morph](const T& v) { return new_morph(morph_(v)); }};
+        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>) {
+            std::function<ret_type(T)> morph{new_morph};
+            return MatrixView<T, decltype(morph)>{&RealAt(0, 0), rows_count, cols_count, cols_count_, morph};
+        } else {
+            std::function<ret_type(T)> morph{ [this, new_morph](const T& v) { return new_morph(morph_(v)); } };
+            return MatrixView<T, decltype(morph)>{&RealAt(0, 0), rows_count, cols_count, cols_count_, morph};
+        }
     }
 
     template <typename NewMorph>
     requires internal_impl::MorphConcept<NewMorph, RealValueType>
-    constexpr MatrixView<const T> ConstView(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols, Morph&& new_morph) const {
+    constexpr auto View(const std::array<std::size_t, 2>& rows, const std::array<std::size_t, 2>& cols, NewMorph&& new_morph) const
+    {
         const auto [rows_count, cols_count]{ViewImpl_(rows, cols)};
+        using ret_type = typename decltype(std::function{std::declval<NewMorph>()})::result_type;
         
-        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
-            return MatrixView<const T, NewMorph>{&RealAt(rows[0], cols[0]), rows_count, cols_count, cols_count_, new_morph};
-        else
-            return MatrixView<const T, NewMorph>{&RealAt(rows[0], cols[0]), rows_count, cols_count, cols_count_,
-                                                [this, new_morph](const T& v) { return new_morph(morph_(v)); }};
+        if constexpr (std::is_same_v<Morph, internal_impl::DefaultMorph<T>>) {
+            std::function<ret_type(T)> morph{new_morph};
+            return MatrixView<const T, decltype(morph)>{&RealAt(0, 0), rows_count, cols_count, cols_count_, morph};
+        } else {
+            std::function<ret_type(T)> morph{ [this, new_morph](const T& v) { return new_morph(morph_(v)); } };
+            return MatrixView<const T, decltype(morph)>{&RealAt(0, 0), rows_count, cols_count, cols_count_, morph};
+        }
+    }
+
+    template <typename NewMorph>
+    requires internal_impl::MorphConcept<NewMorph, RealValueType>
+    constexpr auto View(NewMorph&& new_morph) const {
+        return View({0, rows_count_ - 1}, {0, cols_count_ - 1}, std::forward<NewMorph>(new_morph));
+    }
+
+    template <typename NewMorph>
+    requires internal_impl::MorphConcept<NewMorph, RealValueType>
+    constexpr auto View(NewMorph&& new_morph) {
+        return View({0, rows_count_ - 1}, {0, cols_count_ - 1}, new_morph);//std::forward<NewMorph>(new_morph));
     }
 
 
@@ -482,7 +495,7 @@ public:
         return Column<const T, Morph>{&RealAt(0, c), cols_count_, rows_count_, morph_};
     }
     constexpr Column<T, Morph> Col(std::size_t c) {
-        return Column<T, Morph>{&RealAt(0, c), cols_count_, rows_count_};
+        return Column<T, Morph>{&RealAt(0, c), cols_count_, rows_count_, morph_};
     }
 
     constexpr std::conditional_t<std::is_same_v<Morph, internal_impl::DefaultMorph<T>>, const T&, RealValueType>
@@ -507,16 +520,22 @@ public:
 
 private:
     constexpr explicit MatrixView(T* data_start, std::size_t rows_count,
-        std::size_t cols_count, std::size_t real_col_count,
-        std::optional<Morph> morph = std::nullopt)
+                                  std::size_t cols_count, std::size_t real_col_count,
+                                  Morph morph)
+        :   data_start_{data_start},
+            rows_count_{rows_count},
+            cols_count_{cols_count},
+            real_col_count_{real_col_count},
+            morph_{morph}
+    {}
+
+    constexpr explicit MatrixView(T* data_start, std::size_t rows_count,
+                                  std::size_t cols_count, std::size_t real_col_count)
         :   data_start_{data_start},
             rows_count_{rows_count},
             cols_count_{cols_count},
             real_col_count_{real_col_count}
-    {
-        if constexpr (!std::is_same_v<Morph, internal_impl::DefaultMorph<T>>)
-            morph_ = morph.value();
-    }
+    {}
 
 private:
     constexpr bool CheckView_(std::size_t rows, std::size_t cols) const {
@@ -528,7 +547,7 @@ private:
     {
         const auto rows_count{rows[1] - rows[0] + 1};
         const auto cols_count{cols[1] - cols[0] + 1};
-        CheckView_(rows_count, cols_count); //! ignored return value
+        std::ignore = CheckView_(rows_count, cols_count); //TODO: ignoring return value
         return {rows_count, cols_count};
     }
 
@@ -645,8 +664,6 @@ template <typename T, typename W, typename R = std::common_type_t<T, W>>
 requires Multipliable<T, W>
 inline constexpr Matrix<R> operator*(const W& val, const Matrix<T>& rhs) { return rhs.View() * val; }
 
-} // namespace rage
-
 
 //! ***
 //! ***
@@ -669,12 +686,11 @@ constexpr R DotProduct(const Column<W, M>& v1, const std::span<T>& v2)
     return DotProduct(v2, v1);
 }
 
+
 //! ***
 //! ***
 //! Classes Implementation
 //! ***
-
-namespace rage{
 
 
 template <typename T, typename Morph>

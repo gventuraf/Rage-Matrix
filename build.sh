@@ -1,1 +1,1 @@
-g++ -std=c++23 -Wall -Wpedantic -o main main.cpp -g
+g++ -g -std=c++23 -Wall -Wpedantic -Wextra -Werror -Wconversion -Wshadow -Wundef -Wunused -fdiagnostics-show-template-tree -o tester_small test_small.cpp

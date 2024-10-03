@@ -1,30 +1,3 @@
-# Rage Matrix - C++
-
-Library in C++ for matrices and operations.
-
-### Run the code yourself
-
-1. Make sure you have C++23
-2. Compile `test_small.cpp` (aka the code below) by running the `build.sh` file.
-
-### !! Std :: Ranges !!
-Matrix and MatrixView are both std::ranges.
-
-### Overview
-
-- Basically we have a Matrix type, which holds the data.
-- The MatrixView type has a pointer to the data.
-- MatrixView is **cool** because:
-  - you can look at only a slice of the Matrix
-  - you can have a transformed view, much like `std::span | std::ranges::views::transform(..)`
-
-### Next commits
-- Tidy up some //TODOs
-- Have a wrapper type so the API of a row and a column is the same
-
-### Code
-
-```c++
 #include "matrix.hpp"
 #include <print>
 
@@ -161,4 +134,3 @@ template <typename T>
 void PrintMatrix(const rage::Matrix<T>& mat, std::string_view title) {
     PrintMatrix(mat.View(), title);
 }
-```
